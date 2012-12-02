@@ -28,8 +28,8 @@ type IFDEntry
 end
 
 data_type_map = [
-  0x0001 => Uint8,            # CHAR
-  0x0002 => Uint8,            # ASCII
+  0x0001 => Char,            # CHAR
+  0x0002 => Char,            # ASCII
   0x0003 => Uint16,           # SHORT
   0x0004 => Uint32,           # LONG
   0x0005 => Rational{Uint32}, # RATIONAL
@@ -37,14 +37,14 @@ data_type_map = [
   0x0007 => Any,              # UNDEFINED 
   0x0008 => Int16,            # SSHORT
   0x0009 => Int16,            # SSHORT
-  0x0010 => Rational{Int32},  # SRATIONAL
-  0x0011 => Float32,          # FLOAT
-  0x0012 => Float64,          # DOUBLE
+  0x000a => Rational{Int32},  # SRATIONAL
+  0x000b => Float32,          # FLOAT
+  0x000c => Float64,          # DOUBLE
   # the following are in tiff.h, but not the spec
-  #0x0013 => Uint32,           # IFD
-  #0x0016 => Uint64,           # LONG8
-  #0x0017 => Int64,            # SLONG8
-  #0x0018 => Uint64,           # IFD8
+  #0x000d => Uint32,           # IFD
+  #0x0010 => Uint64,           # LONG8
+  #0x0011 => Int64,            # SLONG8
+  #0x0012 => Uint64,           # IFD8
 ]
 
 IFD = Dict{Uint16, IFDEntry}
@@ -120,6 +120,10 @@ function tag_value_array(tf::TiffFile, entry::IFDEntry)
                  unpack(source, Struct(T, tf.endianness)) :
                  tf.unpack(read(source, T))
     end
+
+    if T == Char
+        val = CharString(val)
+    end
     val
 end
 
@@ -148,8 +152,56 @@ end
 tag_value(tf::TiffFile, ifd::IFD, tag::Real, default) = tag_value(tf, ifd, uint16(tag), default)
 tag_value(tf::TiffFile, ifd::IFD, tag::Real) = tag_value(tf, ifd, uint16(tag))
 tag_value(tf::TiffFile, ifd::IFD, tag::Uint16) = tag_value(tf, ifd, tag, None)
-tag_value_array(tf::TiffFile, ifd::IFD, tag::Real) = tag_value(tf, ifd, uint16(tag))
-tag_value_array(tf::TiffFile, ifd::IFD, tag::Uint16) = tag_value(tf, ifd, tag, None)
+tag_value_array(tf::TiffFile, ifd::IFD, tag::Real, default) = tag_value_array(tf, ifd, uint16(tag), default)
+tag_value_array(tf::TiffFile, ifd::IFD, tag::Real) = tag_value_array(tf, ifd, uint16(tag))
+tag_value_array(tf::TiffFile, ifd::IFD, tag::Uint16) = tag_value_array(tf, ifd, tag, None)
+
+function sample_type(tf::TiffFile, ifd::IFD)
+    bits_per_sample   = tag_value_array(tf, ifd, TIFFTAG_BITSPERSAMPLE, [1])
+    sample_format     = tag_value(tf, ifd, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT)
+
+    println("bits_per_sample: $(bits_per_sample)\nsample_format: $(sample_format)")
+    if (!all(bits_per_sample .== bits_per_sample[1]))
+        error("Unsupported TIFF file format: Not all channels have the same sample size")
+    end
+    bits_per_sample = bits_per_sample[1]
+
+    if (sample_format == SAMPLEFORMAT_VOID)
+        sample_format = SAMPLEFORMAT_UINT
+    end
+
+    return sample_type(bits_per_sample, sample_format)
+end
+
+function sample_type(bits_per_sample::Integer, sample_format::Integer)
+    bits_per_sample == 1 && return Bool
+
+    bytes_per_sample = div(bits_per_sample, 8)
+    if (mod(bits_per_sample, 8) != 0)
+        error("Unsupported TIFF file format: $(int(bits_per_sample)) bits per sample (must be either 1 or a multiple of 8)")
+    end
+
+    idx = iceil(log2(bytes_per_sample)) + 1
+
+    T = None
+    if (sample_format == SAMPLEFORMAT_UINT)
+        T = [Uint8, Uint16, Uint32, Uint64][idx]
+    elseif (sample_format == SAMPLEFORMAT_INT)
+        T = [Int8, Int16, Int32, Int64][idx]
+    elseif (sample_format == SAMPLEFORMAT_IEEEFP)
+        T = [None, None, Float32, Float64][idx]
+    elseif (sample_format == SAMPLEFORMAT_COMPLEXINT)
+        T = None # TODO support this...
+    elseif (sample_format == SAMPLEFORMAT_COMPLEXIEEEFP)
+        T = [None, None, None, Complex64, Complex128][idx]
+    end
+
+    if (T == None)
+        error("Unsupported TIFF file format.")
+    end
+    return T
+end
+
 
 function read_image_data(tf::TiffFile, ifd::IFD)
     photometric       = tag_value(tf, ifd, TIFFTAG_PHOTOMETRIC)
@@ -157,36 +209,19 @@ function read_image_data(tf::TiffFile, ifd::IFD)
     image_length      = tag_value(tf, ifd, TIFFTAG_IMAGELENGTH)
     image_width       = tag_value(tf, ifd, TIFFTAG_IMAGEWIDTH)
     rows_per_strip    = tag_value(tf, ifd, TIFFTAG_ROWSPERSTRIP)
-    bits_per_sample   = tag_value(tf, ifd, TIFFTAG_BITSPERSAMPLE, one(Uint8))
     samples_per_pixel = tag_value(tf, ifd, TIFFTAG_SAMPLESPERPIXEL, one(Uint8))
     extra_samples     = tag_value_array(tf, ifd, TIFFTAG_EXTRASAMPLES)
     strip_offsets     = tag_value_array(tf, ifd, TIFFTAG_STRIPOFFSETS)
     strip_byte_counts = tag_value_array(tf, ifd, TIFFTAG_STRIPBYTECOUNTS)
 
-    println("photometric: $photometric\ncompression: $compression\nimage_length: $image_length\nimage_width: $image_width\nrows_per_strip: $rows_per_strip\nstrip_offsets: $strip_offsets\nstrip_byte_counts: $strip_byte_counts\nbits_per_sample: $bits_per_sample\nsamples_per_pixel: $samples_per_pixel\nextra_samples: $extra_samples\n")
+    println("photometric: $photometric\ncompression: $compression\nimage_length: $image_length\nimage_width: $image_width\nrows_per_strip: $rows_per_strip\nstrip_offsets: $strip_offsets\nstrip_byte_counts: $strip_byte_counts\nsamples_per_pixel: $samples_per_pixel\nextra_samples: $extra_samples\n")
 
-    if (samples_per_pixel == 1 && bits_per_sample == 1)
-        pixels = BitArray(int(image_length), int(image_length), int(samples_per_pixel))
-    else
-        T = [
-        Uint8,
-        Uint16,
-        Uint32,
-        Uint32,
-        Uint64,
-        Uint64][div(bits_per_sample, 8)]
+    T = sample_type(tf, ifd)
 
-        println(T)
-        if (length(bits_per_sample) > 1)
-            if (!all(bits_per_sample .== first(bits_per_sample)))
-                error("Unsupported Format: Bit sizes of samples differ.")
-            end
-            T = T[1]
-        end
-        println(T)
-
-        pixels  = Array(T, image_length, image_width, samples_per_pixel)
-    end
+    pixels = (T == Bool) ?  BitArray(int(image_length), int(image_length),
+                                     int(samples_per_pixel)) :
+                               Array(T, image_length, image_width,
+                                     samples_per_pixel)
 
     row = one(Uint)
     for (offset, bytes) in zip(strip_offsets, strip_byte_counts)
@@ -200,19 +235,23 @@ function read_image_data(tf::TiffFile, ifd::IFD)
         end
     end
 
+    if (samples_per_pixel == 1)
+        pixels = pixels[:,:,1]
+    end
+
     pixels
 end
 
-function decompress_image_data{T,N}(tf::TiffFile,
+function decompress_image_data{T}(tf::TiffFile,
                                     offset::Unsigned,
                                     bytes::Unsigned,
                                     compression::Unsigned,
-                                    pixels::Union(Array{T,N}, BitArray{T,N}),
+                                    pixels::Union(Array{T}, BitArray{T}),
                                     row::Unsigned)
     height, width, samples = size(pixels) 
     seek(tf.file, offset)
     bytes_read = 0
-    if (compression == 1)
+    if (compression == COMPRESSION_NONE)
         while (bytes_read < bytes)
             if (isa(pixels, BitArray))
                 val = tf.unpack(read(tf.file, Uint8))
@@ -253,4 +292,20 @@ function tiff_imread(file::String)
     img = read_image_data(tf, ifd)
     tiff_close(tf)
     return img
+end
+
+function tiff_imgarray(file::String)
+    tf = tiff_open(file)
+    ifd, next_off = read_ifd(tf, tf.ifd_offset)
+    img = read_image_data(tf, ifd)
+
+    arrayi_order = ndims(img) == 3 ? "yxc" :
+                   ndims(img) == 2 ? "yx" :
+                   error("unknown tiff dimensions") # this shouldnt' happen
+    imarr = ImageArray(img, arrayi_order)
+
+    # TODO fill in additional fields of ImageArray
+
+    tiff_close(tf)
+    return imarr
 end
