@@ -1,6 +1,6 @@
-"""
-A pure julia TIFF loader
-"""
+#
+# A pure julia TIFF loader
+#
 
 load("tiff_h")
 load("strpack")
@@ -90,9 +90,9 @@ end
 #
 
 function tag_value_array(tf::TiffFile, entry::IFDEntry)
-    """
-    Get array of values in IFD entry
-    """
+    #
+    # Get array of values in IFD entry
+    #
 
     T = data_type_map[entry.data_type]
 
@@ -124,13 +124,13 @@ function tag_value_array(tf::TiffFile, entry::IFDEntry)
 end
 
 function tag_value(tf::TiffFile, entry::IFDEntry)
-    """
-    Get value of IFD entry.
+    #
+    #Get value of IFD entry.
 
-    NB. All TIFF tag values are arrays (there are no scalar types)
-        For convenience, this function returns the element of any length-1 arrays.
-        If an array is desired in all cases, use `tag_value_array`.
-    """
+    #NB. All TIFF tag values are arrays (there are no scalar types)
+    #    For convenience, this function returns the element of any length-1 arrays.
+    #    If an array is desired in all cases, use `tag_value_array`.
+    #
     val = tag_value_array(tf, entry)
     entry.count == 1 ? val[1] : val
 end
