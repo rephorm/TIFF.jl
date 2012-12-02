@@ -68,6 +68,17 @@ function tiff_open(io::IO)
 end
 tiff_open(filename::String) = tiff_open(open(filename))
 
+function read_ifds(tf::TiffFile)
+    ifd, next_offset = read_ifd(tf, tf.ifd_offset)
+    ifds = [ifd]
+
+    while (next_offset != 0)
+        ifd, next_offset = read_ifd(tf, offset)
+        ifds = [ifds ifd]
+    end
+    ifds
+end
+
 function read_ifd(tf::TiffFile, ifd_offset)
     seek(tf.file, ifd_offset)
     count = tf.unpack(read(tf.file, Uint16))
