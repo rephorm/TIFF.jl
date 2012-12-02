@@ -2,9 +2,8 @@
 A pure julia TIFF loader
 """
 
-println("start")
-load("strpack")
 load("tiff_h")
+load("strpack")
 load("bitarray")
 
 type TiffFile
