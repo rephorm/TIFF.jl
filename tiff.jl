@@ -28,23 +28,23 @@ type IFDEntry
 end
 
 data_type_map = [
-  0x0001 => Char,            # CHAR
-  0x0002 => Char,            # ASCII
+  0x0001 => Char,             # CHAR
+  0x0002 => Char,             # ASCII
   0x0003 => Uint16,           # SHORT
   0x0004 => Uint32,           # LONG
   0x0005 => Rational{Uint32}, # RATIONAL
   0x0006 => Int8,             # SBYTE
   0x0007 => Any,              # UNDEFINED 
   0x0008 => Int16,            # SSHORT
-  0x0009 => Int16,            # SSHORT
+  0x0009 => Int32,            # SLONG
   0x000a => Rational{Int32},  # SRATIONAL
   0x000b => Float32,          # FLOAT
   0x000c => Float64,          # DOUBLE
   # the following are in tiff.h, but not the spec
-  #0x000d => Uint32,           # IFD
-  #0x0010 => Uint64,           # LONG8
-  #0x0011 => Int64,            # SLONG8
-  #0x0012 => Uint64,           # IFD8
+  0x000d => Uint32,           # IFD
+  0x0010 => Uint64,           # LONG8
+  0x0011 => Int64,            # SLONG8
+  0x0012 => Uint64,           # IFD8
 ]
 
 IFD = Dict{Uint16, IFDEntry}
